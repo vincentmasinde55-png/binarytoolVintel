@@ -105,7 +105,8 @@
     const demoAuthToken = normalizeLoginId(storageScope.getItem(LINKED_ACCOUNT_KEYS.DEMO_AUTH_TOKEN));
     const linkMode = normalizeLoginId(storageScope.getItem(LINKED_ACCOUNT_KEYS.LINK_MODE));
     if (!realLoginId || !demoLoginId) return null;
-    return { realLoginId, realAuthToken, demoLoginId, demoAuthToken, linkMode };
+    const demoBalance = getDemoBalanceFromStorage(storageScope, demoLoginId);
+    return { realLoginId, realAuthToken, demoLoginId, demoAuthToken, linkMode, demoBalance };
   }
 
   function patchAccountEntriesWithDemoBalance(entries, link) {
