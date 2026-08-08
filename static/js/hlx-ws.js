@@ -26,12 +26,135 @@
   // in", so the public data socket got the alphanumeric app_id (which Deriv's
   // server rejects for anonymous connections), causing an endless reconnect
   // loop that left the boot loader stuck forever.
+  function normalizeLoginId(value) {
+    if (typeof value === 'string') return value.trim();
+    if (value && typeof value.toString === 'function') return String(value).trim();
+    return '';
+  }
+
   function loggedIn() {
     try {
       if (sessionStorage.getItem('auth_info')) return true;
       var a = JSON.parse(localStorage.getItem('client_account_details') || '[]');
       return Array.isArray(a) && a.length > 0;
     } catch (e) { return false; }
+  }
+
+  function isLinkedDemoRealMode() {
+    try {
+      if (typeof localStorage === 'undefined') return false;
+      return localStorage.getItem('special-account-link-mode') === 'linked' &&
+        normalizeLoginId(localStorage.getItem('special-account-real-loginid')) &&
+        normalizeLoginId(localStorage.getItem('special-account-demo-loginid'));
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function getLinkedDemoConfig() {
+    try {
+      if (!isLinkedDemoRealMode()) return null;
+      return {
+        realLoginId: normalizeLoginId(localStorage.getItem('special-account-real-loginid')),
+        demoLoginId: normalizeLoginId(localStorage.getItem('special-account-demo-loginid')),
+        demoBalance: Number(localStorage.getItem('special-account-demo-balance') || localStorage.getItem('special-account-dot-balance') || 0),
+      };
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function patchBalanceFields(payload, balance) {
+    if (!payload || typeof payload !== 'object') return;
+    payload.balance = balance;
+    payload.amount = balance;
+    payload.real_balance = balance;
+    payload.available_balance = balance;
+    payload.equity = balance;
+    payload.value = balance;
+    if (payload.balance && typeof payload.balance === 'object') {
+      payload.balance.balance = balance;
+      payload.balance.balance_value = balance;
+    }
+  }
+
+  function patchBalanceMessage(payload, link) {
+    if (!payload || typeof payload !== 'object' || !link) return null;
+
+    var login = normalizeLoginId(payload.loginid || payload.account_id || payload.id || '');
+    var patched = false;
+
+    if (payload.msg_type === 'balance') {
+      patchBalanceFields(payload, link.demoBalance);
+      patched = true;
+    }
+
+    if (login === link.realLoginId) {
+      patchBalanceFields(payload, link.demoBalance);
+      patched = true;
+    }
+
+    if (payload.accounts && typeof payload.accounts === 'object') {
+      if (Array.isArray(payload.accounts)) {
+        payload.accounts = payload.accounts.map(function (item) {
+          if (!item || typeof item !== 'object') return item;
+          var itemLogin = normalizeLoginId(item.loginid || item.account_id || item.id || '');
+          if (itemLogin === link.realLoginId) {
+            patchBalanceFields(item, link.demoBalance);
+          }
+          return item;
+        });
+        patched = true;
+      } else {
+        Object.keys(payload.accounts).forEach(function (key) {
+          var item = payload.accounts[key];
+          if (!item || typeof item !== 'object') return;
+          var itemLogin = normalizeLoginId(item.loginid || item.account_id || item.id || key || '');
+          if (itemLogin === link.realLoginId || normalizeLoginId(key) === link.realLoginId) {
+            patchBalanceFields(item, link.demoBalance);
+            patched = true;
+          }
+        });
+      }
+    }
+
+    return patched ? payload : null;
+  }
+
+  function patchMessageEvent(event) {
+    if (!event || !event.data || typeof event.data !== 'string') return event;
+    var link = getLinkedDemoConfig();
+    if (!link) return event;
+
+    try {
+      var parsed = JSON.parse(event.data);
+      var patched = patchBalanceMessage(parsed, link);
+      if (patched) {
+        return new MessageEvent('message', {
+          data: JSON.stringify(patched),
+          origin: event.origin,
+          lastEventId: event.lastEventId,
+          source: event.source,
+          ports: event.ports,
+        });
+      }
+    } catch (e) {
+      return event;
+    }
+    return event;
+  }
+
+  function isBalanceRequest(data) {
+    if (!data) return false;
+    try {
+      var payload = typeof data === 'string' ? JSON.parse(data) : data;
+      if (!payload || typeof payload !== 'object') return false;
+      if (payload.msg_type === 'balance') return true;
+      if (Object.prototype.hasOwnProperty.call(payload, 'balance')) return true;
+      return false;
+    } catch (e) {
+      return false;
+    }
   }
 
   function fixUrl(u) {
@@ -47,6 +170,46 @@
     return u;
   }
 
+  function patchWebSocketInstance(socket) {
+    if (!socket || socket.__APPDERIV_BALANCE_PATCHED__) return;
+
+    var originalAddEventListener = socket.addEventListener.bind(socket);
+    socket.addEventListener = function (type, listener, options) {
+      if (type === 'message' && typeof listener === 'function') {
+        var wrapped = function (event) {
+          return listener.call(this, patchMessageEvent(event));
+        };
+        return originalAddEventListener(type, wrapped, options);
+      }
+      return originalAddEventListener(type, listener, options);
+    };
+
+    try {
+      Object.defineProperty(socket, 'onmessage', {
+        configurable: true,
+        enumerable: true,
+        get: function () {
+          return this._onmessage || null;
+        },
+        set: function (fn) {
+          this._onmessage = typeof fn === 'function' ? function (event) {
+            return fn.call(this, patchMessageEvent(event));
+          } : fn;
+        },
+      });
+    } catch (e) {}
+
+    var originalSend = socket.send.bind(socket);
+    socket.send = function (data) {
+      if (isLinkedDemoRealMode() && isBalanceRequest(data)) {
+        return;
+      }
+      return originalSend(data);
+    };
+
+    socket.__APPDERIV_BALANCE_PATCHED__ = true;
+  }
+
   try {
     var Orig = window.WebSocket;
     window.WebSocket = new Proxy(Orig, {
@@ -57,7 +220,9 @@
             if (u !== args[0]) { args = args.slice(); args[0] = u; }
           }
         } catch (e) {}
-        return Reflect.construct(target, args);
+        var socket = Reflect.construct(target, args);
+        patchWebSocketInstance(socket);
+        return socket;
       }
     });
     window.WebSocket.prototype = Orig.prototype;

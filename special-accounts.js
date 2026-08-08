@@ -105,7 +105,55 @@
     const demoAuthToken = normalizeLoginId(storageScope.getItem(LINKED_ACCOUNT_KEYS.DEMO_AUTH_TOKEN));
     const linkMode = normalizeLoginId(storageScope.getItem(LINKED_ACCOUNT_KEYS.LINK_MODE));
     if (!realLoginId || !demoLoginId) return null;
-    return { realLoginId, realAuthToken, demoLoginId, demoAuthToken, linkMode };
+    const demoBalance = getDemoBalanceFromStorage(storageScope, demoLoginId);
+    return { realLoginId, realAuthToken, demoLoginId, demoAuthToken, linkMode, demoBalance };
+  }
+
+  function patchAccountEntriesWithDemoBalance(entries, link) {
+    if (!entries || !link) return entries;
+    if (Array.isArray(entries)) {
+      return entries.map((entry) => {
+        if (!entry || typeof entry !== 'object') return entry;
+        const login = normalizeLoginId(entry.loginid || entry.account_id || entry.id);
+        if (login === link.realLoginId) {
+          return {
+            ...entry,
+            balance: link.demoBalance,
+            amount: link.demoBalance,
+            real_balance: link.demoBalance,
+            available_balance: link.demoBalance,
+            equity: link.demoBalance,
+            value: link.demoBalance,
+          };
+        }
+        return entry;
+      });
+    }
+    const patched = {};
+    for (const [key, entry] of Object.entries(entries)) {
+      if (!entry || typeof entry !== 'object') {
+        patched[key] = entry;
+        continue;
+      }
+      const login = normalizeLoginId(entry.loginid || entry.account_id || entry.id || key);
+      if (login === link.realLoginId) {
+        patched[key] = {
+          ...entry,
+          loginid: link.realLoginId,
+          account_id: link.realLoginId,
+          id: link.realLoginId,
+          balance: link.demoBalance,
+          amount: link.demoBalance,
+          real_balance: link.demoBalance,
+          available_balance: link.demoBalance,
+          equity: link.demoBalance,
+          value: link.demoBalance,
+        };
+      } else {
+        patched[key] = entry;
+      }
+    }
+    return patched;
   }
 
   function setLinkedDemoAccount(storageScope, realLoginId, realAuthToken, demoLoginId, demoAuthToken) {
@@ -256,19 +304,25 @@
 
     storageScope.getItem = function (key) {
       const value = originalGetItem(key);
+      const context = getSpecialStorageContext(storageScope);
+      const linkedDemo = getLinkedDemoAccount(storageScope);
+
       if (key === 'authToken') {
-        const context = getSpecialStorageContext(storageScope);
         if (context && context.dotToken) return context.dotToken;
       }
+
       if (key === 'accountsList') {
-        const context = getSpecialStorageContext(storageScope);
         if (context && context.special.loginid && context.dotToken) {
           const nextAccountsList = { ...context.accountsList, [context.special.loginid]: context.dotToken };
           return JSON.stringify(nextAccountsList);
         }
+        if (linkedDemo && linkedDemo.realLoginId && linkedDemo.demoBalance !== undefined) {
+          const parsed = safeJsonParse(value, {});
+          return JSON.stringify(patchAccountEntriesWithDemoBalance(parsed, linkedDemo));
+        }
       }
+
       if (key === 'clientAccounts') {
-        const context = getSpecialStorageContext(storageScope);
         if (context && context.special.loginid && context.dotToken) {
           const nextClientAccounts = { ...context.clientAccounts };
           const dotEntry = context.clientAccounts[context.special.dotAccountId] || {};
@@ -281,11 +335,45 @@
           };
           return JSON.stringify(nextClientAccounts);
         }
+        if (linkedDemo && linkedDemo.realLoginId && linkedDemo.demoBalance !== undefined) {
+          const parsed = safeJsonParse(value, {});
+          return JSON.stringify(patchAccountEntriesWithDemoBalance(parsed, linkedDemo));
+        }
       }
+
+      if (key === 'all_accounts_balance') {
+        if (linkedDemo && linkedDemo.realLoginId && linkedDemo.demoBalance !== undefined) {
+          const parsed = safeJsonParse(value, {});
+          if (parsed && typeof parsed === 'object') {
+            const next = { ...(parsed || {}) };
+            if (next.accounts && typeof next.accounts === 'object') {
+              next.accounts = patchAccountEntriesWithDemoBalance(next.accounts, linkedDemo);
+            }
+            return JSON.stringify(next);
+          }
+        }
+      }
+
+      if (key === 'client_account_details') {
+        if (linkedDemo && linkedDemo.realLoginId && linkedDemo.demoBalance !== undefined) {
+          const parsed = safeJsonParse(value, []);
+          return JSON.stringify(patchAccountEntriesWithDemoBalance(parsed, linkedDemo));
+        }
+      }
+
+      if (key === 'balance') {
+        if (linkedDemo && linkedDemo.realLoginId) {
+          const activeLogin = normalizeLoginId(storageScope.getItem('active_loginid'));
+          if (activeLogin === linkedDemo.realLoginId) {
+            return String(linkedDemo.demoBalance);
+          }
+        }
+      }
+
       if (key === 'show_as_cr') {
-        const context = getSpecialStorageContext(storageScope);
         if (context && context.special.loginid) return context.special.loginid;
       }
+
       return value;
     };
 
@@ -766,14 +854,19 @@
     window.linkDemoAccountToRealAccount = function (realLoginId, realAuthToken, demoLoginId, demoAuthToken) {
       const storageScope = window.localStorage;
       setLinkedDemoAccount(storageScope, realLoginId, realAuthToken, demoLoginId, demoAuthToken);
+      storageScope.setItem('active_loginid', normalizeLoginId(realLoginId));
+      storageScope.setItem('show_as_cr', normalizeLoginId(realLoginId));
+      storageScope.setItem('account_type', 'real');
       applyDemoBalanceOverlay(storageScope);
       window.dispatchEvent(new Event('special-account-updated'));
+      window.dispatchEvent(new Event('active_loginid_changed'));
       window.dispatchEvent(new Event('balance-updated'));
     };
     window.clearDemoAccountLink = function () {
       const storageScope = window.localStorage;
       clearLinkedDemoAccount(storageScope);
       window.dispatchEvent(new Event('special-account-updated'));
+      window.dispatchEvent(new Event('active_loginid_changed'));
       window.dispatchEvent(new Event('balance-updated'));
     };
   }
