@@ -4,8 +4,6 @@ const fs = require('fs');
 const BRAND = require('./brand.config');
 const app = express();
 const PORT = process.env.PORT || 3001;
-const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_PUBLISHABLE_KEY || '';
 
 // ─── TEMPLATE TOKEN RENDERING ────────────────────────────────────────────────
 // index.html / manifest.json ship with %%TOKEN%% placeholders instead of
@@ -182,58 +180,8 @@ function buildHLXSite(site) {
 
 // ─── FREE BOTS LIBRARY ───────────────────────────────────────────────────────
 // Served through the same /api/appwrite/bots + /bot-xml contract the bundle
-// expects. Bot records now come from Supabase and are filtered by per-site
-// assignments instead of the static local bots folder.
+// expects. Bot records are loaded locally from the bots folder.
 const BOT_DIR = path.join(__dirname, 'bots');
-
-async function supabaseRest(pathname, init = {}) {
-  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-    throw new Error('Supabase credentials are not configured for the deploy server.');
-  }
-
-  const response = await fetch(`${SUPABASE_URL}/rest/v1${pathname}`, {
-    ...init,
-    headers: {
-      apikey: SUPABASE_SERVICE_ROLE_KEY,
-      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
-      Accept: 'application/json',
-      ...(init.headers || {}),
-    },
-  });
-
-  if (!response.ok) {
-    const body = await response.text();
-    throw new Error(`Supabase request failed (${response.status}): ${body}`);
-  }
-
-  return response.json();
-}
-
-async function fetchSiteBotAssignments(site) {
-  const siteId = site && (site.siteId || site.id || '');
-  if (!siteId) return [];
-
-  try {
-    const assignments = await supabaseRest(`/site_bot_assignments?select=bot_id&site_id=eq.${encodeURIComponent(siteId)}&is_active=eq.true`);
-    return Array.isArray(assignments) ? assignments.map((row) => row.bot_id).filter(Boolean) : [];
-  } catch (error) {
-    console.warn('[deploy-server] Unable to load site bot assignments:', error instanceof Error ? error.message : error);
-    return [];
-  }
-}
-
-async function fetchAssignedBots(site) {
-  const assignedBotIds = await fetchSiteBotAssignments(site);
-  if (!assignedBotIds.length) return [];
-
-  try {
-    const bots = await supabaseRest(`/xml_bots?select=id,name,file_name,xml_content,is_active&is_active=eq.true`);
-    return (Array.isArray(bots) ? bots : []).filter((bot) => assignedBotIds.includes(bot.id));
-  } catch (error) {
-    console.warn('[deploy-server] Unable to load XML bots from Supabase:', error instanceof Error ? error.message : error);
-    return [];
-  }
-}
 
 function humanizeBotName(fileName) {
   const base = fileName.replace(/\.xml$/i, '');
@@ -254,24 +202,38 @@ function buildBotSlug(fileName) {
 }
 
 async function getBotLibrary(site) {
-  const databaseBots = await fetchAssignedBots(site);
-  return databaseBots.map((bot) => {
-    const fileName = bot.file_name || `${bot.name || 'bot'}.xml`;
-    return {
-      id: bot.id,
-      file: fileName,
-      displayName: bot.name || humanizeBotName(fileName),
-      description: 'Bot loaded from the database.',
-      category: 'Free Bot',
-      folderId: 'free-bots',
-      folderName: 'Free Bots',
-      xmlContent: bot.xml_content || '',
-    };
-  });
+  const siteId = site && (site.siteId || site.id || '');
+  const now = new Date().toISOString();
+  const botFiles = [];
+
+  if (fs.existsSync(BOT_DIR) && fs.statSync(BOT_DIR).isDirectory()) {
+    for (const fileName of fs.readdirSync(BOT_DIR)) {
+      if (!fileName.toLowerCase().endsWith('.xml')) continue;
+      const filePath = path.join(BOT_DIR, fileName);
+      try {
+        const xmlContent = fs.readFileSync(filePath, 'utf8');
+        const id = buildBotSlug(fileName);
+        botFiles.push({
+          id,
+          file: fileName,
+          displayName: humanizeBotName(fileName),
+          description: 'Bot loaded from the local bots folder.',
+          category: 'Free Bot',
+          folderId: 'free-bots',
+          folderName: 'Free Bots',
+          xmlContent,
+          createdAt: now,
+        });
+      } catch (error) {
+        console.warn('[deploy-server] Unable to read bot file:', filePath, error instanceof Error ? error.message : error);
+      }
+    }
+  }
+
+  return botFiles;
 }
 
 async function botCards(site) {
-  const nowIso = new Date().toISOString();
   const bots = await getBotLibrary(site);
   return bots.map((b) => ({
     id: b.id,
