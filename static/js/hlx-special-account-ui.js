@@ -1,4 +1,4 @@
-(0function () {
+(function () {
   var injectedNode = null;
   var observer = null;
 
