@@ -1,33 +1,85 @@
-const DEFAULT_SITES = {};
-
-const DEFAULT = {
-  id: 'default',
-  name: 'AppDeriv Sites Builder',
-  appName: 'AppDeriv Sites Builder',
-  logoTextMain: 'AppDeriv',
-  logoTextAccent: 'Sites Builder',
-  tagline: 'Build your trading brand.',
-  description: 'Custom branded trading website.',
-  derivAppId: '',
-  allowedDomains: [],
-  primaryDomain: 'appderivsites12.vercel.app',
-  primaryColor: '#0d0557',
-  accentColor: '#0f33d6',
-  activeTabColor: '#0f33d6',
-  botButtonColor: '#0d0557',
-  botBuilderColor: '#0b0f19',
-  secondaryColor: '#0b0f19',
-  backgroundColor: '#0a0713',
-  fontFamily: 'Inter',
-  fontGoogleParam: 'Inter:wght@300;400;500;600;700;800',
-  referralUrl: '',
-  specialAccounts: [],
-  marketingAccounts: [],
+const DEFAULT_SITES = {
+  default: {
+    id: 'default',
+    siteId: 'default',
+    name: 'AppDeriv Sites Builder',
+    appName: 'AppDeriv Sites Builder',
+    logoTextMain: 'AppDeriv',
+    logoTextAccent: 'Sites Builder',
+    tagline: 'Build your trading brand.',
+    description: 'Custom branded trading website.',
+    derivAppId: '',
+    allowedDomains: [],
+    primaryDomain: 'appderivsites12.vercel.app',
+    primaryColor: '#0d0557',
+    accentColor: '#0f33d6',
+    activeTabColor: '#0f33d6',
+    botButtonColor: '#0d0557',
+    botBuilderColor: '#0b0f19',
+    secondaryColor: '#0b0f19',
+    backgroundColor: '#0a0713',
+    fontFamily: 'Inter',
+    fontGoogleParam: 'Inter:wght@300;400;500;600;700;800',
+    referralUrl: '',
+    specialAccounts: [],
+    marketingAccounts: [],
+  },
+  binarytool_virid: {
+    id: 'binarytool_virid',
+    siteId: 'binarytool_virid',
+    name: 'BinaryTool Virid',
+    appName: 'BinaryTool',
+    logoTextMain: 'BinaryTool',
+    logoTextAccent: 'Virid',
+    tagline: 'Build your trading brand.',
+    description: 'Custom branded trading website.',
+    derivAppId: '340Rq6GbW1fGHgpjdJS43',
+    allowedDomains: ['binarytool-virid.vercel.app'],
+    primaryDomain: 'binarytool-virid.vercel.app',
+    primaryColor: '#0d0557',
+    accentColor: '#0f33d6',
+    activeTabColor: '#0f33d6',
+    botButtonColor: '#0d0557',
+    botBuilderColor: '#0b0f19',
+    secondaryColor: '#0b0f19',
+    backgroundColor: '#0a0713',
+    fontFamily: 'Inter',
+    fontGoogleParam: 'Inter:wght@300;400;500;600;700;800',
+    referralUrl: '',
+    specialAccounts: [],
+    marketingAccounts: [],
+  },
+  // Add additional hardcoded sites here.
+  // Example:
+  // example: {
+  //   id: 'example',
+  //   siteId: 'example',
+  //   name: 'Example Brand',
+  //   appName: 'Example Brand',
+  //   logoTextMain: 'Example',
+  //   logoTextAccent: 'Brand',
+  //   tagline: 'Example trading site',
+  //   description: 'A hardcoded example site.',
+  //   derivAppId: '',
+  //   allowedDomains: ['example.com', 'www.example.com'],
+  //   primaryDomain: 'example.com',
+  //   primaryColor: '#1d4ed8',
+  //   accentColor: '#06b6d4',
+  //   activeTabColor: '#06b6d4',
+  //   botButtonColor: '#1d4ed8',
+  //   botBuilderColor: '#0b0f19',
+  //   secondaryColor: '#111827',
+  //   backgroundColor: '#0f172a',
+  //   fontFamily: 'Inter',
+  //   fontGoogleParam: 'Inter:wght@300;400;500;600;700;800',
+  //   referralUrl: '',
+  //   specialAccounts: [],
+  //   marketingAccounts: [],
+  // },
 };
 
+const DEFAULT = DEFAULT_SITES.default;
 const DEFAULT_SITE_KEY = 'default';
-const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
-const SUPABASE_READ_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_PUBLISHABLE_KEY || '';
 
 function normalizeHostname(value) {
   return String(value || '')
@@ -101,96 +153,14 @@ function normalizeSpecialAccounts(value) {
     .filter(Boolean);
 }
 
-function normalizeSiteRow(row) {
-  const allowedDomains = Array.isArray(row.allowed_domains)
-    ? row.allowed_domains.filter(Boolean)
-    : typeof row.allowed_domains === 'string'
-      ? row.allowed_domains.split(',').map((item) => item.trim()).filter(Boolean)
-      : [];
-
-  const primaryDomain = normalizeHostname(row.primary_domain || allowedDomains[0] || '');
-  const normalizedAllowedDomains = [...new Set(allowedDomains.map((item) => normalizeHostname(item)).filter(Boolean))];
-  const redirectUrl = normalizeRedirectUrl(row.redirect_url || row.redirectUrl || primaryDomain, primaryDomain);
-  const slug = row.slug || row.id || (row.name || 'site').toLowerCase().replace(/[^a-z0-9]+/g, '-');
-
-  return {
-    id: slug,
-    siteId: row.id || row.site_id || row.database_id || '',
-    name: row.name || row.app_name || 'Site',
-    appName: row.app_name || row.name || 'Site',
-    logoTextMain: row.logo_text_main || row.app_name || row.name || 'Site',
-    logoTextAccent: row.logo_text_accent || 'Trading Hub',
-    logoUrl: row.logo_url || row.logoUrl || '',
-    faviconUrl: row.favicon_url || row.faviconUrl || '',
-    tagline: row.tagline || 'smarter trading, easier grinding',
-    description: row.description || 'Custom branded trading website.',
-    derivAppId: row.deriv_app_id || '',
-    redirectUrl,
-    allowedDomains: [...new Set(normalizedAllowedDomains.concat(primaryDomain).filter(Boolean))],
-    primaryDomain,
-    primaryColor: normalizeHexColor(row.primary_color, '#0d0557'),
-    accentColor: normalizeHexColor(row.accent_color, '#0f33d6'),
-    activeTabColor: normalizeHexColor(
-      row.active_tab_color || row.activeTabColor || row.accent_color || row.accentColor,
-      '#0f33d6'
-    ),
-    botButtonColor: normalizeHexColor(
-      row.bot_button_color || row.botButtonColor || row.primary_color || row.primaryColor,
-      '#0d0557'
-    ),
-    botBuilderColor: normalizeHexColor(
-      row.bot_builder_color || row.botBuilderColor || row.secondary_color || row.secondaryColor,
-      '#0b0f19'
-    ),
-    secondaryColor: normalizeHexColor(row.secondary_color, '#0b0f19'),
-    backgroundColor: normalizeHexColor(row.background_color, '#0a0713'),
-    fontFamily: row.font_family || 'Inter',
-    fontGoogleParam: row.font_google_param || 'Inter:wght@300;400;500;600;700;800',
-    referralUrl: row.referral_url || '',
-    specialAccounts: normalizeSpecialAccounts(row.special_accounts || row.specialAccounts || []),
-    marketingAccounts: Array.isArray(row.marketing_accounts || row.marketingAccounts) ? (row.marketing_accounts || row.marketingAccounts) : [],
-  };
-}
-
-async function fetchSitesFromDatabase() {
-  if (!SUPABASE_URL || !SUPABASE_READ_KEY) return {};
-
-  try {
-    const response = await fetch(`${SUPABASE_URL}/rest/v1/site_configs?select=*&is_active=eq.true`, {
-      headers: {
-        apikey: SUPABASE_READ_KEY,
-        Authorization: `Bearer ${SUPABASE_READ_KEY}`,
-        Accept: 'application/json',
-      },
-    });
-
-    if (!response.ok) throw new Error(`Supabase site fetch failed: ${response.status}`);
-    const rows = await response.json();
-    if (!Array.isArray(rows) || rows.length === 0) return {};
-
-    const sites = {};
-    for (const row of rows) {
-      const normalized = normalizeSiteRow(row);
-      sites[normalized.id] = normalized;
-    }
-    return sites;
-  } catch (error) {
-    console.warn('[brand.config] No database site config available:', error instanceof Error ? error.message : error);
-    return {};
-  }
-}
-
-async function findSiteByHostname(hostname) {
-  const sites = await fetchSitesFromDatabase();
-  const defaultSite = sites[DEFAULT_SITE_KEY] || DEFAULT;
-
+function findSiteByHostname(hostname) {
+  const defaultSite = DEFAULT;
   if (!hostname) return defaultSite;
 
   const host = normalizeHostname(hostname);
   if (!host) return defaultSite;
 
-  for (const siteKey of Object.keys(sites)) {
-    const site = sites[siteKey];
+  for (const site of Object.values(DEFAULT_SITES)) {
     const primary = normalizeHostname(site.primaryDomain);
     const allowed = Array.isArray(site.allowedDomains)
       ? site.allowedDomains.map((domain) => normalizeHostname(domain))
@@ -208,5 +178,4 @@ module.exports = Object.assign({}, DEFAULT, {
   sites: DEFAULT_SITES,
   defaultSiteKey: DEFAULT_SITE_KEY,
   getConfig: async (hostname) => findSiteByHostname(hostname),
-  fetchSitesFromDatabase,
 });
