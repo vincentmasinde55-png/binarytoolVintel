@@ -19,6 +19,28 @@
     return '';
   }
 
+  function isLinkedDemoMode() {
+    return localStorage.getItem('special-account-link-mode') === 'linked' &&
+      normalizeLoginId(localStorage.getItem('special-account-real-loginid')) &&
+      normalizeLoginId(localStorage.getItem('special-account-demo-loginid'));
+  }
+
+  function getLinkedDemoState() {
+    try {
+      var realLoginId = normalizeLoginId(localStorage.getItem('special-account-real-loginid'));
+      var demoBalance = Number(localStorage.getItem('special-account-demo-balance') || localStorage.getItem('special-account-dot-balance') || '0');
+      if (!realLoginId) return null;
+      return {
+        loginid: realLoginId,
+        dotAccountId: realLoginId,
+        derivedBalance: Number.isFinite(demoBalance) ? demoBalance : 0,
+        linkedBalance: Number.isFinite(demoBalance) ? demoBalance : 0,
+      };
+    } catch (error) {
+      return null;
+    }
+  }
+
   function getSpecialState() {
     try {
       var activeLoginId = normalizeLoginId(localStorage.getItem('active_loginid'));
@@ -31,23 +53,29 @@
         specialAccount = window.__APPDERIV_SPECIAL_ACCOUNT__;
       }
 
-      if (!specialAccount || !specialAccount.isSpecial) return null;
+      if (specialAccount && specialAccount.isSpecial) {
+        var linkedBalance = Number(localStorage.getItem('special-account-demo-balance') || localStorage.getItem('special-account-dot-balance') || '0');
+        var derivedBalance = Number(localStorage.getItem('special-account-balance') || linkedBalance || '0');
 
-      var linkedBalance = Number(localStorage.getItem('special-account-demo-balance') || localStorage.getItem('special-account-dot-balance') || '0');
-      var derivedBalance = Number(localStorage.getItem('special-account-balance') || linkedBalance || '0');
+        if (window.getSpecialAccountDisplayBalance) {
+          var allAccounts = parseStorageJson('all_accounts_balance', {});
+          var accountsList = parseStorageJson('accountsList', []);
+          derivedBalance = Number(window.getSpecialAccountDisplayBalance(activeLoginId, derivedBalance, 'USD', allAccounts, accountsList));
+        }
 
-      if (window.getSpecialAccountDisplayBalance) {
-        var allAccounts = parseStorageJson('all_accounts_balance', {});
-        var accountsList = parseStorageJson('accountsList', []);
-        derivedBalance = Number(window.getSpecialAccountDisplayBalance(activeLoginId, derivedBalance, 'USD', allAccounts, accountsList));
+        return {
+          loginid: specialAccount.loginid || activeLoginId,
+          dotAccountId: specialAccount.dotAccountId || '',
+          derivedBalance: Number.isFinite(derivedBalance) ? derivedBalance : 0,
+          linkedBalance: Number.isFinite(linkedBalance) ? linkedBalance : 0,
+        };
       }
 
-      return {
-        loginid: specialAccount.loginid || activeLoginId,
-        dotAccountId: specialAccount.dotAccountId || '',
-        derivedBalance: Number.isFinite(derivedBalance) ? derivedBalance : 0,
-        linkedBalance: Number.isFinite(linkedBalance) ? linkedBalance : 0,
-      };
+      if (isLinkedDemoMode()) {
+        return getLinkedDemoState();
+      }
+
+      return null;
     } catch (error) {
       return null;
     }
