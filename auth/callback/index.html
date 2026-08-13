@@ -1,0 +1,33 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>VintelFX OAuth callback</title></head>
+<body>
+<script>
+(async function(){
+  const params = new URLSearchParams(location.search);
+  const code = params.get('code');
+  const state = params.get('state');
+  if (!code) { document.body.innerText = 'No code in URL'; return; }
+  const code_verifier = localStorage.getItem('pkce_code_verifier');
+  if (!code_verifier) { document.body.innerText = 'Missing code_verifier. Please login again.'; return; }
+  try {
+    const r = await fetch('/api/exchange', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code, code_verifier })
+    });
+    if (!r.ok) {
+      const txt = await r.text();
+      document.body.innerText = 'Exchange failed: ' + txt;
+      return;
+    }
+    localStorage.removeItem('pkce_code_verifier');
+    // redirect back to the app home
+    location.href = '/';
+  } catch (e) {
+    document.body.innerText = 'Network error: ' + e.message;
+  }
+})();
+</script>
+</body>
+</html>
