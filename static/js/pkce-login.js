@@ -34,6 +34,13 @@ async function startLogin() {
   authUrl.searchParams.set('code_challenge', code_challenge);
   authUrl.searchParams.set('code_challenge_method','S256');
 
+  // DEBUG: show the full auth URL before redirecting so you can copy it if Deriv rejects it
+  try {
+    console.log('DEBUG authUrl:', authUrl.toString());
+    alert('DEBUG authUrl:\n' + authUrl.toString());
+  } catch (e) { console.log('DEBUG alert failed', e); }
+
+  // redirect user
   window.location.href = authUrl.toString();
 }
 
